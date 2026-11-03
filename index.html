@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Raumschach 5×5×5</title>
+<title>Raumschach 5×5×5 (Online)</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 :root{--bg:#0f1322;--card:#171d33;--fg:#e6e9f5;--mut:#9aa4c7;--ln:#2c3557;--ac:#8fa8ff;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -15,6 +16,8 @@ h1{font-size:22px;font-weight:700;margin:2px 0}
 .lv{display:flex;flex-direction:column-reverse;gap:22px;max-width:640px;margin:0 auto}
 .lh{font-size:14px;color:var(--mut);margin:0 0 4px}
 .lh b{color:var(--fg);font-size:17px;margin-right:4px}
+[hidden]{display:none!important}
+#ns{color:var(--mut);align-self:center}
 canvas{display:block;width:100%;aspect-ratio:1;border-radius:6px;box-shadow:0 0 0 1px var(--ln);touch-action:manipulation;user-select:none;-webkit-user-select:none;cursor:pointer}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
 select,button{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid var(--ln);background:var(--card);color:var(--fg)}
@@ -32,11 +35,12 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--ac);outline-of
 <main>
 <h1>Raumschach</h1>
 <p id="st"></p>
+<div id="ol" class="row" hidden><button class="p" id="cp">Copy invite link</button><span id="ns"></span></div>
 <div class="lv" id="lv"></div>
 <div id="pk"><span>Promote to</span><span id="pb"></span></div>
 <p id="lg">P pawn · N knight · B bishop · R rook · Q queen · K king · 🦄 unicorn (one step diagonally through 3D)</p>
 <div class="row">
-<select id="md" aria-label="Mode"><option value="2">Two players</option><option value="1">vs Computer</option></select>
+<select id="md" aria-label="Mode"><option value="2">Two players</option><option value="1">vs Computer</option><option value="3">Online (invite link)</option></select>
 <select id="sd" aria-label="Your side"><option value="1">Play White</option><option value="-1">Play Black</option></select>
 <select id="dif" aria-label="Difficulty"><option value="1">Easy</option><option value="2" selected>Medium</option><option value="3">Hard</option></select>
 </div>
@@ -181,7 +185,7 @@ function fresh(){
  put(1,0,[3,7,5,3,7],1);put(1,1,[1,1,1,1,1],1);
  put(3,4,[3,7,5,3,7],-1);put(3,3,[1,1,1,1,1],-1);
  put(4,4,[4,2,6,2,4],-1);put(4,3,[1,1,1,1,1],-1);
- G={b,turn:1,hm:0,last:null,hist:[],moves:[],over:false,mode:+$("md").value,me:+$("sd").value};
+ G={b,turn:1,hm:0,last:null,hist:[],moves:[],raw:[],over:false,mode:+$("md").value,me:+$("sd").value};
  sel=-1;targets=[];pend=null;busy=false;$("pk").classList.remove("on");
 }
 const key=(b,t)=>b.join(",")+t;
@@ -198,19 +202,23 @@ function setStatus(){
  G.over=!!r;if(r)LEG=[];
  let txt=r||`${who} to move${CHK>=0?" — check!":""}`;
  if(!r&&G.mode==1)txt+=G.turn==G.me?" (you)":" (computer)";
+ if(!r&&G.mode==3)txt=(!G.me?"Connecting…":(G.turn==G.me?"Your move":"Opponent’s move")+(CHK>=0?" — check!":""))+(conn&&conn.open?"":" (offline)");
+ if(G.mode==3)$("ns").textContent=nst+(G.me?" · You play "+(G.me>0?"White":"Black"):"");
  if(busy)txt="Computer is thinking…";
  $("st").textContent=txt;
  $("mv").textContent=G.moves.length?G.moves.map((n,i)=>(i%2==0?(i/2+1|0)+". ":"")+n).join("   "):"Moves appear here.";
  $("mv").scrollTop=$("mv").scrollHeight}
-function doMove(m,promo){
+function doMove(m,promo,silent,remote){
  const b=G.b,side=G.turn,piece=b[m[0]],cap=b[m[1]]!==0;
  const note=notate(b,m)+(m[2]?SYM[promo]:"");
  G.hist.push({b:b.slice(),turn:G.turn,hm:G.hm,last:G.last,n:G.moves.length});
  b[m[1]]=m[2]?promo*side:piece;b[m[0]]=0;
  G.hm=(Math.abs(piece)==1||cap)?0:G.hm+1;
- G.last=[m[0],m[1]];G.turn=-side;G.moves.push(note);
+ G.last=[m[0],m[1]];G.turn=-side;G.moves.push(note);G.raw.push([m[0],m[1],m[2]?promo:0]);
  sel=-1;targets=[];pend=null;$("pk").classList.remove("on");
- setStatus();draw();
+ if(silent)return;
+ setStatus();draw();save();
+ if(G.mode==3&&!remote)send({t:"mv",n:G.raw.length,m:G.raw[G.raw.length-1]});
  maybeAI()}
 function maybeAI(){
  if(G.mode!=1||G.over||G.turn==G.me||busy)return;
@@ -226,7 +234,7 @@ function showPicker(m){
   bt.onclick=()=>doMove(pend,t);pb.appendChild(bt)}
  $("pk").classList.add("on")}
 function undo(){
- if(pend||busy||!G.hist.length)return;
+ if(pend||busy||G.mode==3||!G.hist.length)return;
  do{const h=G.hist.pop();G.b=h.b;G.turn=h.turn;G.hm=h.hm;G.last=h.last;G.moves.length=h.n}
  while(G.mode==1&&G.turn!=G.me&&G.hist.length);
  sel=-1;targets=[];setStatus();draw()}
@@ -274,7 +282,7 @@ function draw(){
 /* ===== Input ===== */
 function clickAt(L,ev){
  if(G.over||pend||busy)return;
- if(G.mode==1&&G.turn!=G.me)return;
+ if((G.mode==1||G.mode==3)&&G.turn!=G.me)return;
  const c=canv[L],r0=c.getBoundingClientRect(),q=r0.width/5;
  const F=Math.floor((ev.clientX-r0.left)/q),row=Math.floor((ev.clientY-r0.top)/q);
  if(F<0||F>4||row<0||row>4)return;
@@ -290,12 +298,75 @@ function clickAt(L,ev){
 /* ===== Setup ===== */
 $("lv").innerHTML=GK.map((g,L)=>`<div><div class="lh"><b>${g}</b>level ${"ABCDE"[L]} · ${LVL[L]}</div><canvas aria-label="Level ${g}"></canvas></div>`).join("");
 document.querySelectorAll("#lv canvas").forEach((c,L)=>{canv.push(c);c.addEventListener("pointerdown",e=>clickAt(L,e))});
-function newGame(){fresh();setStatus();draw();maybeAI()}
+function newGame(){netStop();fresh();$("sd").disabled=G.mode==2;$("dif").disabled=G.mode!=1;if(G.mode==3)netStart("host",rid());setStatus();draw();save();maybeAI()}
 $("nw").onclick=newGame;
-$("md").onchange=$("sd").onchange=$("dif").onchange=newGame;
+$("md").onchange=$("sd").onchange=newGame;
 $("un").onclick=undo;
 window.addEventListener("resize",draw);
-newGame();
+/* ===== Save, restore, and online play (PeerJS) ===== */
+const SK="raum-save-v1";
+let role="",game="",peer=null,conn=null,nst="",retry=0;
+const PID=g=>"qmbraum-"+g,rid=()=>Math.random().toString(36).slice(2,10).padEnd(8,"x");
+const send=o=>{try{if(conn&&conn.open)conn.send(o)}catch(e){}};
+function save(){try{localStorage.setItem(SK,JSON.stringify({v:1,raw:G.raw,mode:G.mode,me:G.me,dif:$("dif").value,t:Date.now(),role,game}))}catch(e){}}
+function load(){try{const d=JSON.parse(localStorage.getItem(SK));return d&&d.v==1&&Date.now()-d.t<12096e5?d:null}catch(e){return null}}
+function replay(raw){
+ fresh();
+ for(const[f,t,p]of raw){const m=legal(G.b,G.turn).find(x=>x[0]==f&&x[1]==t);if(!m)break;doMove(m,p||5,1)}
+ setStatus();draw()}
+function netStop(){role="";game="";nst="";if(conn)try{conn.close()}catch(e){}conn=null;if(peer)try{peer.destroy()}catch(e){}peer=null;$("ol").hidden=true;try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}}
+function netStart(r,gm){
+ role=r;game=gm;$("ol").hidden=false;$("cp").hidden=r=="guest";
+ if(r=="host")try{history.replaceState(null,"","#"+gm)}catch(e){}
+ if(peer)try{peer.destroy()}catch(e){}
+ nst="Connecting…";save();setStatus();
+ if(typeof Peer=="undefined"){nst="Online play needs the PeerJS script, which didn’t load here.";setStatus();return}
+ try{peer=r=="host"?new Peer(PID(gm)):new Peer()}catch(e){nst="Could not start online play.";setStatus();return}
+ const pr=peer;
+ pr.on("open",()=>{retry=0;if(r=="guest")dial();else{nst=conn&&conn.open?"Connected":"Waiting for opponent…";setStatus()}});
+ pr.on("connection",c=>{if(r=="host")attach(c)});
+ pr.on("disconnected",()=>{try{pr.reconnect()}catch(e){}});
+ pr.on("error",e=>{
+  if(peer!==pr)return;
+  if(e.type=="unavailable-id"&&retry++<15){nst="Reclaiming your game…";setStatus();setTimeout(()=>{if(peer===pr)netStart(r,gm)},1500)}
+  else if(e.type=="peer-unavailable"&&r=="guest"){nst="Host not online yet — retrying…";setStatus();setTimeout(dial,3000)}
+  else{nst="Can’t reach the PeerJS service ("+e.type+"). Online play needs a normal web host.";setStatus()}})}
+function dial(){if(!peer||peer.destroyed||(conn&&conn.open))return;attach(peer.connect(PID(game),{reliable:true}))}
+const hi=()=>({t:"hi",raw:G.raw,me:role=="host"?G.me:0});
+function attach(c){
+ if(conn&&conn!==c)try{conn.close()}catch(e){}
+ conn=c;
+ c.on("open",()=>{nst="Connected";send(hi());setStatus()});
+ c.on("data",onData);
+ c.on("close",()=>{if(conn===c){conn=null;nst="Disconnected — reconnecting…";setStatus();if(role=="guest")setTimeout(dial,2000)}})}
+const prefix=(a,b)=>a.length<=b.length&&a.every((x,i)=>x[0]==b[i][0]&&x[1]==b[i][1]&&x[2]==b[i][2]);
+function onData(d){
+ if(d.t=="hi"){
+  if(role=="guest"&&d.me){G.me=-d.me;$("sd").value=String(G.me)}
+  if(d.raw.length>G.raw.length&&prefix(G.raw,d.raw)){const me=G.me;replay(d.raw);G.me=me;save();setStatus();draw()}
+  else if(d.raw.length<G.raw.length&&prefix(d.raw,G.raw))send(hi());
+  else{save();setStatus();draw()}
+ }else if(d.t=="mv"){
+  if(d.n==G.raw.length+1&&G.turn!=G.me){const m=legal(G.b,G.turn).find(x=>x[0]==d.m[0]&&x[1]==d.m[1]);if(m)doMove(m,d.m[2]||5,0,1)}
+  else if(d.n>G.raw.length+1)send(hi())}}
+$("cp").onclick=()=>{const u=location.href.split("#")[0]+"#"+game;
+ if(navigator.share)navigator.share({url:u,title:"Raumschach game"}).catch(()=>{});
+ else if(navigator.clipboard)navigator.clipboard.writeText(u).then(()=>{nst="Invite link copied";setStatus()});
+ else prompt("Invite link",u)};
+function restore(){
+ const gh=location.hash.slice(1),d=load();
+ if(gh&&!(d&&d.mode==3&&d.game==gh)){
+  $("md").value="3";$("sd").disabled=$("dif").disabled=true;
+  fresh();G.me=0;netStart("guest",gh);draw();return 1}
+ if(!d)return 0;
+ try{
+  $("md").value=String(d.mode);if(d.me)$("sd").value=String(d.me);$("dif").value=d.dif;
+  $("sd").disabled=d.mode==2||d.role=="guest";$("dif").disabled=d.mode!=1;
+  replay(d.raw);
+  if(d.mode==3){G.me=d.me;netStart(d.role,d.game)}else maybeAI();
+  return 1}catch(e){return 0}}
+$("dif").onchange=newGame;
+if(!restore())newGame();
 </script>
 </body>
 </html>
