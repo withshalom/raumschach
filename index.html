@@ -18,6 +18,7 @@ h1{font-size:22px;font-weight:700;margin:2px 0}
 .lh b{color:var(--fg);font-size:17px;margin-right:4px}
 [hidden]{display:none!important}
 #ns{color:var(--mut);align-self:center}
+#lk{flex:1 1 100%;min-width:0;font:13px ui-monospace,Menlo,Consolas,monospace;padding:9px 10px;border-radius:8px;border:1px solid var(--ln);background:var(--card);color:var(--fg)}
 canvas{display:block;width:100%;aspect-ratio:1;border-radius:6px;box-shadow:0 0 0 1px var(--ln);touch-action:manipulation;user-select:none;-webkit-user-select:none;cursor:pointer}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
 select,button{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid var(--ln);background:var(--card);color:var(--fg)}
@@ -35,7 +36,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--ac);outline-of
 <main>
 <h1>Raumschach</h1>
 <p id="st"></p>
-<div id="ol" class="row" hidden><button class="p" id="cp">Copy invite link</button><span id="ns"></span></div>
+<div id="ol" class="row" hidden><button class="p" id="cp">Copy invite link</button><span id="ns"></span><input id="lk" readonly aria-label="Invite link" hidden></div>
 <div class="lv" id="lv"></div>
 <div id="pk"><span>Promote to</span><span id="pb"></span></div>
 <p id="lg">P pawn · N knight · B bishop · R rook · Q queen · K king · 🦄 unicorn (one step diagonally through 3D)</p>
@@ -45,7 +46,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--ac);outline-of
 <select id="dif" aria-label="Difficulty"><option value="1">Easy</option><option value="2" selected>Medium</option><option value="3">Hard</option></select>
 </div>
 <div class="row">
-<button class="p" id="nw">New game</button><button id="un">Undo</button>
+<button class="p" id="nw">New game</button><button id="po">Invite a friend</button><button id="un">Undo</button>
 </div>
 <div id="mv"></div>
 </main>
@@ -300,6 +301,7 @@ $("lv").innerHTML=GK.map((g,L)=>`<div><div class="lh"><b>${g}</b>level ${"ABCDE"
 document.querySelectorAll("#lv canvas").forEach((c,L)=>{canv.push(c);c.addEventListener("pointerdown",e=>clickAt(L,e))});
 function newGame(){netStop();fresh();$("sd").disabled=G.mode==2;$("dif").disabled=G.mode!=1;if(G.mode==3)netStart("host",rid());setStatus();draw();save();maybeAI()}
 $("nw").onclick=newGame;
+$("po").onclick=()=>{$("md").value="3";newGame();$("ol").scrollIntoView&&$("ol").scrollIntoView({block:"nearest"})};
 $("md").onchange=$("sd").onchange=newGame;
 $("un").onclick=undo;
 window.addEventListener("resize",draw);
@@ -316,7 +318,7 @@ function replay(raw){
  setStatus();draw()}
 function netStop(){role="";game="";nst="";if(conn)try{conn.close()}catch(e){}conn=null;if(peer)try{peer.destroy()}catch(e){}peer=null;$("ol").hidden=true;try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}}
 function netStart(r,gm){
- role=r;game=gm;$("ol").hidden=false;$("cp").hidden=r=="guest";
+ role=r;game=gm;$("ol").hidden=false;$("cp").hidden=r=="guest";$("lk").hidden=r=="guest";$("lk").value=location.href.split("#")[0]+"#"+gm;
  if(r=="host")try{history.replaceState(null,"","#"+gm)}catch(e){}
  if(peer)try{peer.destroy()}catch(e){}
  nst="Connecting…";save();setStatus();
